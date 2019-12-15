@@ -16,11 +16,11 @@ func main() {
 		Layers: []nn.Layer{
 			&nn.Translate{(&lab.Vector{[]float64{-.5, -.5}, 2, 1}).Col()},
 			nn.NewFCLayer(2, 6),
-			&nn.TanhActivation{},
-			nn.NewFCLayer(6, 15),
-			&nn.TanhActivation{},
-			nn.NewFCLayer(15, 6),
-			&nn.TanhActivation{},
+			&nn.RELU{},
+			nn.NewFCLayer(6, 50),
+			&nn.RELU{},
+			nn.NewFCLayer(50, 6),
+			&nn.RELU{},
 			nn.NewFCLayer(6, 2),
 		},
 	}
@@ -28,7 +28,7 @@ func main() {
 	fmt.Println(benchModel(model, 100))
 
 	for i := 0; i < 1000; i++ {
-		train(model, 1, 10, .00005)
+		train(model, 1, 100, .00005)
 		fmt.Println(benchModel(model, 1000))
 		drawModel(model, fmt.Sprintf("out%v.png", i))
 	}
@@ -58,22 +58,15 @@ func drawModel(model nn.Network, fname string) {
 
 }
 
-func getCatMat(matrix *lab.Matrix) *lab.Matrix {
+func getCatMat(matrix *lab.Matrix) int {
 	center := lab.NewVector([]float64{.5, .5}).Col()
 	diff := center.Sub(matrix)
 	dist := diff.Transpose().Multiply(diff).Access(0, 0)
 	if dist < .15 {
-		return &lab.Matrix{
-			X:    []float64{1, 0},
-			Cols: 1,
-			Rows: 2,
-		}
+		return 0
 	}
-	return &lab.Matrix{
-		X:    []float64{0, 1},
-		Cols: 1,
-		Rows: 2,
-	}
+	return 1
+
 }
 
 func getHot(matrix *lab.Matrix) int {
@@ -91,7 +84,7 @@ func benchModel(network nn.Network, n int) float64 {
 			Cols: 1,
 			Rows: 2,
 		}
-		expected := getHot(getCatMat(vec))
+		expected := getCatMat(vec)
 		got := getHot(network.Forward(vec))
 		if expected == got {
 			cor++
@@ -101,9 +94,10 @@ func benchModel(network nn.Network, n int) float64 {
 }
 
 func train(network nn.Network, batchSize, n int, rate float64) {
-	loss := nn.SELoss{}
+	loss := nn.NewSoftMaxCrossEntropy(2)
 	for i := 0; i < n; i++ {
 		loss.Reset()
+		var losss float64
 		for j := 0; j < batchSize; j++ {
 			vec := &lab.Matrix{
 				X:    []float64{rand.Float64(), rand.Float64()},
@@ -112,8 +106,9 @@ func train(network nn.Network, batchSize, n int, rate float64) {
 			}
 			loss.Target = getCatMat(vec)
 			result := network.Forward(vec)
-			loss.Loss(result)
+			losss = loss.Loss(result)
 		}
+		fmt.Println("loss", losss)
 		network.Backward(loss.Backward())
 		network.Update(rate)
 	}

@@ -17,6 +17,56 @@ type Loss interface {
 	Backward() *lab.Matrix
 }
 
+type SoftMaxCrossEntropy struct {
+	crossEntropy float64
+	gradients    *lab.Matrix
+	size         int
+	Target       int
+}
+
+func NewSoftMaxCrossEntropy(size int) *SoftMaxCrossEntropy {
+	return &SoftMaxCrossEntropy{
+		size:      size,
+		gradients: lab.NewMatrix(size, 1),
+	}
+}
+
+func (s *SoftMaxCrossEntropy) Backward() *lab.Matrix {
+	return s.gradients
+}
+
+func (s *SoftMaxCrossEntropy) Reset() {
+	s.crossEntropy = 0
+	s.gradients = lab.NewMatrix(s.size, 1)
+}
+
+func (s *SoftMaxCrossEntropy) Loss(mat *lab.Matrix) float64 {
+	max := mat.Access(0, 0)
+	for i := 1; i < s.size; i++ {
+		if mat.Access(i, 0) > max {
+			max = mat.Access(i, 0)
+		}
+	}
+	mat = mat.Sub(lab.Solid(s.size, 1, max))
+	var denom float64
+	for i := 0; i < s.size; i++ {
+		denom += math.Exp(mat.Access(i, 0))
+	}
+	newGradients := lab.NewMatrix(s.size, 1)
+	for i := 0; i < s.size; i++ {
+
+		var y float64
+		p := math.Exp(mat.Access(i, 0)) / denom
+		if i == s.Target {
+			y = 1.0
+			s.crossEntropy += -math.Log(p)
+		}
+		newGradients.Set(i, 0, p-y)
+	}
+	s.gradients = s.gradients.Add(newGradients)
+	return s.crossEntropy
+}
+
 type FCLayer struct {
 	W *lab.Matrix
 	B *lab.Matrix
