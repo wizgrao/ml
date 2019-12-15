@@ -23,17 +23,15 @@ func main() {
 	}
 	model := nn.Network{
 		Layers: []nn.Layer{
-			&nn.Translate{lab.Solid(17*17, 1, -128.0)},
+			&nn.Translate{lab.Solid(28*28, 1, -128.0)},
 			&nn.Scale{1.0 / 128.0},
-			nn.NewFCLayer(17*17, 500),
-			&nn.RELU{},
-			nn.NewFCLayer(500, 500),
+			nn.NewFCLayer(28*28, 500),
 			&nn.RELU{},
 			nn.NewFCLayer(500, 10),
 		},
 	}
 	fmt.Println(evaluate(model, testSet))
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1000; i++ {
 		train(model, 10, .00001, trainSet)
 		fmt.Println(evaluate(model, trainSet), evaluate(model, testSet))
 	}
@@ -67,7 +65,8 @@ func evaluate(network nn.Network, m *mnist) float64 {
 	m.reset()
 	var correct int
 	var total int
-	for i := 0; i < 100; i++ {
+	confusion := lab.NewMatrix(10, 10)
+	for i := 0; i < 500; i++ {
 		x, t := m.nextSample()
 		if x == nil {
 			break
@@ -82,11 +81,13 @@ func evaluate(network nn.Network, m *mnist) float64 {
 		if max == t {
 			correct++
 		}
+		confusion.Set(max, t, confusion.Access(max, t)+1.0)
 		total++
 	}
 	if total == 0 {
 		return 1
 	}
+	fmt.Println(confusion)
 	return float64(correct) / float64(total)
 }
 
@@ -114,7 +115,7 @@ func (m *mnist) nextSample() (*lab.Matrix, int) {
 	}
 	index := m.perm[m.i]
 	label := int(math.Round(m.mat.Access(0, index)))
-	x := m.mat.SubMatrix(1, index, 17*17, 1)
+	x := m.mat.SubMatrix(1, index, 28*28, 1)
 	m.i++
 	return x, label
 }
