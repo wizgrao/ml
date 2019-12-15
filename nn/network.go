@@ -139,6 +139,22 @@ func (f *TanhActivation) Backward(matrix *lab.Matrix) *lab.Matrix {
 func (f *TanhActivation) Update(rate float64) {
 }
 
+type Scale struct {
+	S float64
+}
+
+func (f *Scale) Forward(matrix *lab.Matrix) *lab.Matrix {
+
+	return matrix.Scale(f.S)
+}
+
+func (f *Scale) Backward(matrix *lab.Matrix) *lab.Matrix {
+	return matrix.Scale(f.S)
+}
+
+func (f *Scale) Update(rate float64) {
+}
+
 type Translate struct {
 	V *lab.Matrix
 }

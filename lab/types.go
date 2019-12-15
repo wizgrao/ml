@@ -1,8 +1,12 @@
 package lab
 
 import (
+	"encoding/csv"
 	"fmt"
+	"io"
 	"math/rand"
+	"os"
+	"strconv"
 	"strings"
 )
 
@@ -10,6 +14,45 @@ type Matrix struct {
 	X    []float64 //row * cols + col
 	Cols int
 	Rows int
+}
+
+func LoadCSV(fileName string) (*Matrix, error) {
+	var buffer []float64
+	var rows int
+	file, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	r := csv.NewReader(file)
+	var line []float64
+
+	for {
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if rows == 0 {
+			line = make([]float64, len(record))
+		}
+		rows++
+		for i, val := range record {
+			line[i], err = strconv.ParseFloat(val, 64)
+			if err != nil {
+				return nil, err
+			}
+		}
+		buffer = append(buffer, line...)
+	}
+	cols := len(buffer) / rows
+	return &Matrix{
+		X:    buffer,
+		Rows: rows,
+		Cols: cols,
+	}, nil
 }
 
 func (m *Matrix) Multiply(m1 *Matrix) *Matrix {
@@ -44,6 +87,18 @@ func (m *Matrix) MultElems(m1 *Matrix) *Matrix {
 	for i := range m.X {
 		ret.X[i] = m.X[i] * m1.X[i]
 	}
+	return ret
+}
+
+func (m *Matrix) SubMatrix(i, j, rows, columns int) *Matrix {
+
+	ret := NewMatrix(rows, columns)
+	for ii := 0; ii < rows; ii++ {
+		for jj := 0; jj < columns; jj++ {
+			ret.Set(ii, jj, m.Access(i+ii, j+jj))
+		}
+	}
+
 	return ret
 }
 
