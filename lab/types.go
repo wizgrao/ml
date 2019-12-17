@@ -3,6 +3,9 @@ package lab
 import (
 	"encoding/csv"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"math/rand"
 	"os"
@@ -16,10 +19,75 @@ type Matrix struct {
 	Rows int
 }
 
+func VStack(matrices ...*Matrix) *Matrix {
+	if len(matrices) == 0 {
+		return nil
+	}
+	var x []float64
+	for _, matrix := range matrices {
+		x = append(x, matrix.X...)
+	}
+	return &Matrix{
+		X:    x,
+		Cols: matrices[0].Cols,
+		Rows: len(x) / matrices[0].Cols,
+	}
+}
+
+func HStack(matrices ...*Matrix) *Matrix {
+	newMatrices := make([]*Matrix, len(matrices))
+	for i, matrix := range matrices {
+		newMatrices[i] = matrix.Transpose()
+	}
+	return VStack(newMatrices...).Transpose()
+}
+
+func Grid(matrices [][]*Matrix) *Matrix {
+	newMatrices := make([]*Matrix, len(matrices))
+	for i, row := range matrices {
+		newMatrices[i] = HStack(row...)
+	}
+	return VStack(newMatrices...)
+}
+
+func (m *Matrix) ImWriteBW(fname string) error {
+	image := image.NewNRGBA(image.Rect(0, 0, m.Cols, m.Rows))
+	max := m.X[0]
+	min := m.X[0]
+
+	for _, v := range m.X {
+		if v > max {
+			max = v
+		}
+		if v < min {
+			min = v
+		}
+	}
+	for x := 0; x < m.Cols; x++ {
+		for y := 0; y < m.Rows; y++ {
+			c := uint8(255.0 / (max - min) * (m.Access(y, x) - min))
+			image.Set(x, y, color.NRGBA{
+				R: c,
+				G: c,
+				B: c,
+				A: 255,
+			})
+		}
+	}
+	f, err := os.Create(fname)
+	defer f.Close()
+	if err != nil {
+		return err
+	}
+	return png.Encode(f, image)
+
+}
+
 func LoadCSV(fileName string) (*Matrix, error) {
 	var buffer []float64
 	var rows int
 	file, err := os.Open(fileName)
+	defer file.Close()
 	if err != nil {
 		return nil, err
 	}

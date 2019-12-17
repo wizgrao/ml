@@ -1,51 +1,91 @@
 package main
 
 import (
-	"fmt"
+	"github.com/wizgrao/ml/data/mnist"
 	"github.com/wizgrao/ml/lab"
 	"github.com/wizgrao/ml/nn"
 
-	"math"
+	"flag"
+	"fmt"
 	"math/rand"
+	"strconv"
 )
 
-func main() {
+var loadWeights = flag.String("weights", "", "file to load weights from")
+var trainSet = flag.String("train", "mnist_train.csv", "csv for training data")
+var testSet = flag.String("test", "mnist_test.csv", "csv for test data")
+var seed = flag.Int64("seed", 123456, "Seed for randomness")
 
-	trainSet, err := newMNIST("mnist_train.csv")
+func main() {
+	flag.Parse()
+	rand.Seed(*seed)
+
+	fmt.Println("Loading training set")
+	trainSet, err := mnist.NewSet(*trainSet)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error loading training set: ", err)
 		return
 	}
-	testSet, err := newMNIST("mnist_test.csv")
+	fmt.Println("Loading test set")
+	testSet, err := mnist.NewSet(*testSet)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error loading test set: ", err)
 		return
 	}
-	model := nn.Network{
+	model := &nn.Network{
 		Layers: []nn.Layer{
 			&nn.Translate{lab.Solid(28*28, 1, -128.0)},
 			&nn.Scale{1.0 / 128.0},
-			nn.NewFCLayer(28*28, 500),
+			nn.NewFCLayer(28*28, 100),
 			&nn.RELU{},
-			nn.NewFCLayer(500, 10),
+			nn.NewFCLayer(100, 10),
 		},
 	}
-	fmt.Println(evaluate(model, testSet))
+	if *loadWeights != "" {
+		fmt.Println("Loading weights")
+		err := model.LoadModel(*loadWeights)
+		if err != nil {
+			fmt.Println("Error loading model: ", err)
+			return
+		}
+	}
+	s, i := trainSet.NextSample()
+	s.Cols = 28
+	s.Rows = 28
+	grid := make([][]*lab.Matrix, 5)
+	for i := range grid {
+		grid[i] = make([]*lab.Matrix, 6)
+		for j := range grid[i] {
+			grid[i][j], _ = trainSet.NextSample()
+			grid[i][j].Rows = 28
+			grid[i][j].Cols = 28
+		}
+	}
+	fmt.Println("Displaying ", i)
+	lab.Grid(grid).ImWriteBW("asdf.png")
+	fmt.Println("Starting Training")
+
 	for i := 0; i < 1000; i++ {
 		train(model, 10, .00001, trainSet)
-		fmt.Println(evaluate(model, trainSet), evaluate(model, testSet))
+		trainAccuracy, trainConfusion := evaluate(model, trainSet)
+		testAccuracy, testConfusion := evaluate(model, testSet)
+		numeral := strconv.FormatInt(int64(i), 10)
+		trainConfusion.ImWriteBW("trainConfusion" + numeral + ".png")
+		testConfusion.ImWriteBW("testConfusion" + numeral + ".png")
+		fmt.Println("Epoch ", i+1, " training accuracy: ", trainAccuracy, " test accuracy: ", testAccuracy)
+		model.SaveModel("mnistE" + numeral + ".json")
 	}
 }
 
-func train(network nn.Network, batchSize int, rate float64, m *mnist) {
+func train(network *nn.Network, batchSize int, rate float64, m *mnist.Set) {
 	loss := nn.NewSoftMaxCrossEntropy(10)
-	m.reset()
+	m.Reset()
 	for {
 		loss.Reset()
 		var x *lab.Matrix
 		var target int
 		for j := 0; j < batchSize; j++ {
-			x, target = m.nextSample()
+			x, target = m.NextSample()
 			if x == nil {
 				break
 			}
@@ -61,13 +101,13 @@ func train(network nn.Network, batchSize int, rate float64, m *mnist) {
 	}
 }
 
-func evaluate(network nn.Network, m *mnist) float64 {
-	m.reset()
+func evaluate(network *nn.Network, m *mnist.Set) (float64, *lab.Matrix) {
+	m.Reset()
 	var correct int
 	var total int
 	confusion := lab.NewMatrix(10, 10)
 	for i := 0; i < 500; i++ {
-		x, t := m.nextSample()
+		x, t := m.NextSample()
 		if x == nil {
 			break
 		}
@@ -85,42 +125,7 @@ func evaluate(network nn.Network, m *mnist) float64 {
 		total++
 	}
 	if total == 0 {
-		return 1
+		return 1, nil
 	}
-	fmt.Println(confusion)
-	return float64(correct) / float64(total)
-}
-
-type mnist struct {
-	i    int
-	mat  *lab.Matrix
-	perm []int
-}
-
-func newMNIST(fileName string) (*mnist, error) {
-	mat, err := lab.LoadCSV(fileName)
-	if err != nil {
-		return nil, err
-	}
-	mat = mat.Transpose()
-	return &mnist{
-		mat:  mat,
-		perm: rand.Perm(mat.Cols),
-	}, nil
-}
-
-func (m *mnist) nextSample() (*lab.Matrix, int) {
-	if m.i >= m.mat.Cols {
-		return nil, 0
-	}
-	index := m.perm[m.i]
-	label := int(math.Round(m.mat.Access(0, index)))
-	x := m.mat.SubMatrix(1, index, 28*28, 1)
-	m.i++
-	return x, label
-}
-
-func (m *mnist) reset() {
-	m.i = 0
-	m.perm = rand.Perm(m.mat.Cols)
+	return float64(correct) / float64(total), confusion
 }
