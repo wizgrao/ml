@@ -19,6 +19,7 @@ type Layer interface {
 type Reparam struct {
 	Eps *lab.Matrix
 	N   int
+	Sig *lab.Matrix
 }
 
 func NewReparam(n int) *Reparam {
@@ -32,11 +33,13 @@ func (r *Reparam) Forward(mat *lab.Matrix) *lab.Matrix {
 	r.Eps = lab.Gaussian(r.N, 1)
 	sigma := mat.SubMatrix(0, 0, r.N, 1)
 	mu := mat.SubMatrix(r.N, 0, r.N, 1)
-	return sigma.MultElems(r.Eps).Add(mu)
+	r.Sig = sigma
+	return sigma.Exp().MultElems(r.Eps).Add(mu)
 }
 
 func (r *Reparam) Backward(mat *lab.Matrix) *lab.Matrix {
-	return lab.VStack(r.Eps, lab.Solid(r.N, 1, 1.0))
+	return lab.VStack(r.Eps.MultElems(r.Sig.Exp()).MultElems(mat), mat)
+
 }
 
 func (r *Reparam) Update(float64) {
@@ -71,8 +74,8 @@ func (n *NormalKL) Loss(mat *lab.Matrix) float64 {
 	for i := 0; i < n.N; i++ {
 		sig := sigma.Access(i, 0)
 		m := mu.Access(i, 0)
-		newLoss -= 0.5 * (1.0 + 2.0*math.Log(sig) - m*m - sig*sig)
-		dSigma.Set(i, 0, -1/sig+1*sig)
+		newLoss -= 0.5 * (1.0 + sig*2 - m*m - math.Exp(sig*2))
+		dSigma.Set(i, 0, math.Min(.5, -1+math.Exp(sig)))
 	}
 
 	n.KL += newLoss
@@ -158,8 +161,8 @@ func NewFCLayer(in, out int) *FCLayer {
 		Bprime:      lab.NewMatrix(out, 1),
 		WMomentum:   lab.NewMatrix(out, in),
 		BMomentum:   lab.NewMatrix(out, 1),
-		W:           lab.Gaussian(out, in),
-		B:           lab.Gaussian(out, 1),
+		W:           lab.Gaussian(out, in).Scale(1.0 / 10.0),
+		B:           lab.NewMatrix(out, 1),
 		Input:       lab.NewMatrix(in, 1),
 		Activations: lab.NewMatrix(out, 1),
 	}
@@ -176,7 +179,7 @@ func (f *FCLayer) Backward(matrix *lab.Matrix) *lab.Matrix {
 	f.Bprime = matrix.Add(f.Bprime)
 	for i := 0; i < f.Wprime.Rows; i++ {
 		for j := 0; j < f.Wprime.Cols; j++ {
-			f.Wprime.Set(i, j, f.Input.Access(j, 0)*matrix.Access(i, 0)+f.Wprime.Access(i, j))
+			f.Wprime.Set(i, j, math.Min(.5, math.Max(-.5, f.Input.Access(j, 0)*matrix.Access(i, 0)+f.Wprime.Access(i, j))))
 		}
 	}
 	return f.W.Transpose().Multiply(matrix)
@@ -211,6 +214,28 @@ func (f *TanhActivation) Backward(matrix *lab.Matrix) *lab.Matrix {
 }
 
 func (f *TanhActivation) Update(rate float64) {
+}
+
+type Sigmoid struct {
+	Input      *lab.Matrix
+	Activation *lab.Matrix
+}
+
+func (f *Sigmoid) Forward(matrix *lab.Matrix) *lab.Matrix {
+	ret := lab.NewMatrix(matrix.Rows, 1)
+	f.Input = matrix
+	for i, val := range matrix.X {
+		ret.X[i] = 1 / (1 + math.Exp(-1*val))
+	}
+	f.Activation = ret
+	return ret
+}
+
+func (f *Sigmoid) Backward(matrix *lab.Matrix) *lab.Matrix {
+	return matrix.MultElems(lab.Solid(matrix.Rows, matrix.Cols, 1).Sub(f.Activation)).MultElems(f.Activation)
+}
+
+func (f *Sigmoid) Update(rate float64) {
 }
 
 type Scale struct {
@@ -288,7 +313,7 @@ func (b *BinaryLogProbLoss) Loss(matrix *lab.Matrix) float64 {
 		xi := b.Target.Access(i, 0)
 		yi := matrix.Access(i, 0)
 		b.L -= xi*math.Log(yi) + (1-xi)*math.Log(1-yi)
-		b.Back.Set(i, 0, b.Back.Access(i, 0)-xi/yi+(1-xi)/(1-yi))
+		b.Back.Set(i, 0, math.Min(.5, math.Max(-.5, b.Back.Access(i, 0)-xi/yi+(1-xi)/(1-yi))))
 	}
 	return b.L
 }
@@ -313,10 +338,11 @@ func (n *Network) Forward(m *lab.Matrix) *lab.Matrix {
 	return m
 }
 
-func (n *Network) Backward(m *lab.Matrix) {
+func (n *Network) Backward(m *lab.Matrix) *lab.Matrix {
 	for i := len(n.Layers) - 1; i >= 0; i-- {
 		m = n.Layers[i].Backward(m)
 	}
+	return m
 }
 
 func (n *Network) Update(rate float64) {

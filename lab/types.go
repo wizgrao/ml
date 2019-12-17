@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -17,6 +18,14 @@ type Matrix struct {
 	X    []float64 //row * cols + col
 	Cols int
 	Rows int
+}
+
+func (m *Matrix) Exp() *Matrix {
+	r := NewMatrix(m.Rows, m.Cols)
+	for i, x := range r.X {
+		r.X[i] = math.Exp(x)
+	}
+	return r
 }
 
 func VStack(matrices ...*Matrix) *Matrix {
